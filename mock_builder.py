@@ -12,7 +12,8 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-#
+''' Build Flask mock servers from snooping HTTP traffic '''
+
 
 import argparse
 import os
@@ -22,7 +23,7 @@ import subprocess
 import tempfile
 
 #TODO global variable bad
-tokens = []
+TOKENS = []
 
 def create_mock(client, server):
     ''' create mock functions from client and server data '''
@@ -44,7 +45,6 @@ def create_mock(client, server):
             response, status_code(server), headers)])
 
 
-
 def response_data(server):
     ''' Extract the response data from the server text '''
     return server.split("\r\n\r\n")[1].replace("\r", "")
@@ -57,7 +57,6 @@ def status_code(server):
 
 def get_headers(server):
     ''' Extract the response headers from the server text '''
-    #TODO: need to deal with "Transfer-Encoding": "chunked"
     items = []
     for line in server.split("\r\n\r\n")[0].split("\r\n")[1:]:
         parts = line.split(": ")
@@ -92,11 +91,10 @@ def params_from_path(path):
             params.append(param)
             path_parts.append("<%s>" % param)
         else:
-            global tokens
-            for t in tokens:
-                new_part = part.replace(t, "<%s>" % t)
+            for token in TOKENS:
+                new_part = part.replace(token, "<%s>" % token)
                 if new_part != part:
-                    params.append(t)
+                    params.append(token)
                     part = new_part
             path_parts.append(part)
 
@@ -109,8 +107,8 @@ def create_def(method_path):
     method, path = method_path.split(" ")
     path, parameters = params_from_path(path)
     dec = '@app.route("%s", methods=["%s"])' % (path, method)
-    for c in '/.<>':
-        path = path.replace(c, '_')
+    for char in '/.<>':
+        path = path.replace(char, '_')
     func_name = method.lower() + path
     param_string = ""
     for i in parameters:
@@ -120,12 +118,11 @@ def create_def(method_path):
 
 
 def main():
+    ''' Run command while snooping then output Flask mock.'''
 
     parser = argparse.ArgumentParser(
             description="Generates HTTP mock from command")
     parser.add_argument("command", type=str)
-    #parser.add_argument("cmd_args", metavar="C", type=str,
-    #        nargs=argparse.REMAINDER)
     parser.add_argument("-p", dest="port", required=True, type=int)
     parser.add_argument("-i", dest="iface", default="any", type=str)
     parser.add_argument("-t", dest="token", type=str)
@@ -133,16 +130,13 @@ def main():
     args = parser.parse_args()
 
     if args.token:
-        global tokens
-        tokens = args.token.split(',')
+        global TOKENS
+        TOKENS = args.token.split(',')
 
-    iface = args.iface
     port = "%s" % args.port
-    #cmd = "%s 2>1 > /dev/null" % args.command
     cmd = "%s 1>2" % args.command
 
-    tcpflow = "/usr/bin/tcpflow"
-    tcpflow_command = [tcpflow, "-i", iface, "port", port]
+    tcpflow_command = ["/usr/bin/tcpflow", "-i", args.iface, "port", port]
 
     new_dir = tempfile.mkdtemp()
     os.chdir(new_dir)
@@ -155,12 +149,12 @@ def main():
     dump_proc.kill()
 
     client_server = []
-    for f in os.listdir(os.getcwd()):
-        if f.endswith("00000"[len(port):] + port):
-            rev = f.split('-')
+    for file_name in os.listdir(os.getcwd()):
+        if file_name.endswith("00000"[len(port):] + port):
+            rev = file_name.split('-')
             rev.reverse()
             server_file = '-'.join(rev)
-            client_server.append((open(f), open(server_file)))
+            client_server.append((open(file_name), open(server_file)))
 
     mock_functions = [
         "#!/usr/bin/env python",
@@ -170,17 +164,14 @@ def main():
     ]
 
     for client, server in client_server:
-        c_data = client.read()
+        mock_functions.append(create_mock(client.read(), server.read()))
         client.close()
-        s_data = server.read()
         server.close()
-        mock_functions.append(create_mock(c_data, s_data))
 
-    mock_functions.append(
-        'if __name__ == "__main__": app.run(host="127.1", debug=True, port=%s)' % port)
+    mock_functions.append("\n".join(['if __name__ == "__main__":',
+        '    app.run(host="127.1", debug=True, port=%s)' % port]))
 
     print "\n\n".join(mock_functions)
-
 
     shutil.rmtree(new_dir)
 
