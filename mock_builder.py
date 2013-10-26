@@ -165,8 +165,13 @@ def main():
         "app = Flask(__name__)"
     ]
 
+    sigs = set()
     for client, server in client_server:
-        mock_functions.append(create_mock(client.read(), server.read()))
+        func = create_mock(client.read(), server.read())
+        sig = "\n".join(func.split("\n")[:2])
+        if sig not in sigs:
+            sigs.add(sig)
+            mock_functions.append(func)
         client.close()
         server.close()
 
