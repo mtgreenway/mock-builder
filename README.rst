@@ -1,7 +1,7 @@
 Http Network Capture to Mock Builder
 ------------------------------------
 
-Starts tcpdump to listen on the network then wraps the commands that you want
+Starts tcpflow to listen on the network then wraps the commands that you want
 to mock up in a test server.
 
 usage::

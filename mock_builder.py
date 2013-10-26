@@ -16,6 +16,7 @@
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -62,12 +63,34 @@ def get_headers(server):
     return "{%s}" % ", ".join(items)
 
 
+def uuid_format(uuid):
+    hexits = 5 * ("[a-fA-F0-9]",)
+    dash = re.compile("%s{8}-%s{4}-%s{4}-%s{4}-%s{12}" % hexits)
+    nodash = re.compile("%s{8}%s{4}%s{4}%s{4}%s{12}" % hexits)
+
+    if dash.match(uuid):
+        return uuid.replace("-", "")
+    elif not nodash.match(uuid):
+        return None
+    return uuid
+
+
 def params_from_path(path):
     ''' if there are things in the path that need to be parameters such as
     uuids or specified unique names to search for like usernames make those
     params '''
 
-    return path, []
+    path_parts = []
+    params = []
+    for part in path.split("/"):
+        if uuid_format(part):
+            param = "uuid%s" % len(params)
+            params.append(param)
+            path_parts.append("<%s>" % param)
+        else:
+            path_parts.append(part)
+
+    return "/".join(path_parts), params
 
 
 
@@ -77,7 +100,8 @@ def create_def(method_path):
     method, path = method_path.split(" ")
     path, parameters = params_from_path(path)
     dec = '@app.route("%s", methods=["%s"])' % (path, method)
-    func_name = method.lower() + path.replace('/', '_').replace('.', '_')
+    func_name = method.lower() + path.replace(
+        '/', '_').replace('.', '_').replace('<', '_').replace('>', '_')
     param_string = ""
     for i in parameters:
         param_string += i + ", "
