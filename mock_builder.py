@@ -105,9 +105,11 @@ def create_def(method_path):
     ''' using the first part of the HTTP request to generate the function
     signature '''
     method, path = method_path.split(" ")
+    #TODO: handle query string
+    path = path.split("?")[0]
     path, parameters = params_from_path(path)
     dec = '@app.route("%s", methods=["%s"])' % (path, method)
-    for char in '/.<>':
+    for char in '/.<>?=':
         path = path.replace(char, '_')
     func_name = method.lower() + path
     param_string = ""
@@ -134,7 +136,7 @@ def main():
         TOKENS = args.token.split(',')
 
     port = "%s" % args.port
-    cmd = "%s 1>2" % args.command
+    cmd = "( %s ) 1>2" % args.command
 
     tcpflow_command = ["/usr/bin/tcpflow", "-i", args.iface, "port", port]
 
