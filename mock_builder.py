@@ -21,6 +21,8 @@ import shutil
 import subprocess
 import tempfile
 
+#TODO global variable bad
+tokens = []
 
 def create_mock(client, server):
     ''' create mock functions from client and server data '''
@@ -64,6 +66,8 @@ def get_headers(server):
 
 
 def uuid_format(uuid):
+    ''' Return formatted uuid if this is a uuid otherwise None '''
+
     hexits = 5 * ("[a-fA-F0-9]",)
     dash = re.compile("%s{8}-%s{4}-%s{4}-%s{4}-%s{12}" % hexits)
     nodash = re.compile("%s{8}%s{4}%s{4}%s{4}%s{12}" % hexits)
@@ -88,10 +92,15 @@ def params_from_path(path):
             params.append(param)
             path_parts.append("<%s>" % param)
         else:
+            global tokens
+            for t in tokens:
+                new_part = part.replace(t, "<%s>" % t)
+                if new_part != part:
+                    params.append(t)
+                    part = new_part
             path_parts.append(part)
 
     return "/".join(path_parts), params
-
 
 
 def create_def(method_path):
@@ -100,8 +109,9 @@ def create_def(method_path):
     method, path = method_path.split(" ")
     path, parameters = params_from_path(path)
     dec = '@app.route("%s", methods=["%s"])' % (path, method)
-    func_name = method.lower() + path.replace(
-        '/', '_').replace('.', '_').replace('<', '_').replace('>', '_')
+    for c in '/.<>':
+        path = path.replace(c, '_')
+    func_name = method.lower() + path
     param_string = ""
     for i in parameters:
         param_string += i + ", "
@@ -118,8 +128,14 @@ def main():
     #        nargs=argparse.REMAINDER)
     parser.add_argument("-p", dest="port", required=True, type=int)
     parser.add_argument("-i", dest="iface", default="any", type=str)
+    parser.add_argument("-t", dest="token", type=str)
 
     args = parser.parse_args()
+
+    if args.token:
+        global tokens
+        tokens = args.token.split(',')
+
     iface = args.iface
     port = "%s" % args.port
     #cmd = "%s 2>1 > /dev/null" % args.command
