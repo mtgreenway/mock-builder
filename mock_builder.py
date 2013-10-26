@@ -23,12 +23,23 @@ import tempfile
 
 def create_mock(client, server):
     ''' create mock functions from client and server data '''
+
+    headers = get_headers(server)
+    response = response_data(server)
+
+    tfer = "'Transfer-Encoding': 'chunked'"
+    # note: a dict ending with a comma is valid
+    for text in [tfer + ", ", tfer]:
+        if text in headers:
+            response = "\n".join(response.split("\n")[1:-1])
+            headers = headers.replace(tfer, "")
+            break
+
     return "\n".join([
         create_def(client.split(" HTTP")[0]),
         "    return ('''%s''', %s, %s)" % (
-            response_data(server),
-            status_code(server),
-            headers(server))])
+            response, status_code(server), headers)])
+
 
 
 def response_data(server):
@@ -41,12 +52,13 @@ def status_code(server):
     return server.split(" ")[1]
 
 
-def headers(server):
+def get_headers(server):
     ''' Extract the response headers from the server text '''
+    #TODO: need to deal with "Transfer-Encoding": "chunked"
     items = []
     for line in server.split("\r\n\r\n")[0].split("\r\n")[1:]:
         parts = line.split(": ")
-        items.append('"%s": "%s"' % (parts[0], ": ".join(parts[1:])))
+        items.append("'%s': '%s'" % (parts[0], ": ".join(parts[1:])))
     return "{%s}" % ", ".join(items)
 
 
@@ -65,7 +77,7 @@ def create_def(method_path):
     method, path = method_path.split(" ")
     path, parameters = params_from_path(path)
     dec = '@app.route("%s", methods=["%s"])' % (path, method)
-    func_name = method.lower() + path.replace('/', '_')
+    func_name = method.lower() + path.replace('/', '_').replace('.', '_')
     param_string = ""
     for i in parameters:
         param_string += i + ", "
@@ -86,7 +98,8 @@ def main():
     args = parser.parse_args()
     iface = args.iface
     port = "%s" % args.port
-    cmd = "%s 2>1 > /dev/null" % args.command
+    #cmd = "%s 2>1 > /dev/null" % args.command
+    cmd = "%s 1>2" % args.command
 
     tcpflow = "/usr/bin/tcpflow"
     tcpflow_command = [tcpflow, "-i", iface, "port", port]
