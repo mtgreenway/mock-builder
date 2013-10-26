@@ -1,0 +1,4 @@
+# generate swift mock using swift-bench to enumerate most 
+# swift api calls 
+
+./mock_builder.py -p 8081 -t test "swift-bench /root/mock-builder/examples/swift/bench_settings.conf" > mock_swift.py
