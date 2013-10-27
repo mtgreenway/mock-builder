@@ -135,28 +135,26 @@ def main():
         global TOKENS
         TOKENS = args.token.split(',')
 
+    new_dir = tempfile.mkdtemp()
+
     port = "%s" % args.port
-    cmd = "( %s ) 1>2" % args.command
 
     tcpflow_command = ["/usr/bin/tcpflow", "-i", args.iface, "port", port]
+    dump_proc = subprocess.Popen(tcpflow_command, cwd=new_dir)
 
-    new_dir = tempfile.mkdtemp()
-    os.chdir(new_dir)
-
-    dump_proc = subprocess.Popen(tcpflow_command)
-
-    run_proc = subprocess.Popen([cmd], shell=True)
+    run_proc = subprocess.Popen(["( %s ) 1>&2" % args.command], shell=True)
     run_proc.wait()
 
     dump_proc.kill()
 
     client_server = []
-    for file_name in os.listdir(os.getcwd()):
+    for file_name in os.listdir(new_dir):
         if file_name.endswith("00000"[len(port):] + port):
             rev = file_name.split('-')
             rev.reverse()
             server_file = '-'.join(rev)
-            client_server.append((open(file_name), open(server_file)))
+            client_server.append((open(os.path.join(new_dir, file_name)),
+                open(os.path.join(new_dir, server_file))))
 
     mock_functions = [
         "#!/usr/bin/env python",
@@ -168,7 +166,7 @@ def main():
     sigs = set()
     for client, server in client_server:
         func = create_mock(client.read(), server.read())
-        sig = "\n".join(func.split("\n")[:2])
+        sig = "".join(func.split("\n")[:2])
         if sig not in sigs:
             sigs.add(sig)
             mock_functions.append(func)
