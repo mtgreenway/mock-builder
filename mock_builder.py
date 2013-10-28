@@ -21,15 +21,23 @@ import re
 import shutil
 import subprocess
 import tempfile
+import logging
+import logging.handlers
 
 #TODO global variable bad
 TOKENS = []
+LOG = logging.getLogger(__name__)
 
 def create_mock(client, server):
     ''' create mock functions from client and server data '''
 
+    LOG.debug("Client data: %s", client)
+    LOG.debug("Server data: %s", server)
     headers = get_headers(server)
     response = response_data(server)
+
+    LOG.debug("HEADERS: %s", headers)
+    LOG.debug("RESPONSE DATA: %s", response)
 
     tfer = "'Transfer-Encoding': 'chunked'"
     # note: a dict ending with a comma is valid
@@ -37,6 +45,9 @@ def create_mock(client, server):
         if text in headers:
             response = "\n".join(response.split("\n")[1:-1])
             headers = headers.replace(tfer, "")
+            LOG.debug("removing Transfer-Encoding header")
+            LOG.debug("New HEADERS: %s", headers)
+            LOG.debug("New RESPONSE DATA: %s", response)
             break
 
     return "\n".join([
@@ -47,7 +58,10 @@ def create_mock(client, server):
 
 def response_data(server):
     ''' Extract the response data from the server text '''
-    return server.split("\r\n\r\n")[1].replace("\r", "")
+    header_body = server.split("\r\n\r\n")
+    if len(header_body) > 1:
+        return header_body[1].replace("\r", "")
+    return ''
 
 
 def status_code(server):
@@ -105,17 +119,31 @@ def create_def(method_path):
     ''' using the first part of the HTTP request to generate the function
     signature '''
     method, path = method_path.split(" ")
+    LOG.debug("Method: %s", method)
+    LOG.debug("Path: %s", path)
+
     #TODO: handle query string
     path = path.split("?")[0]
+    LOG.debug("Path without query string: %s", path)
+
     path, parameters = params_from_path(path)
+    LOG.debug("Path with parameters: %s", path)
+
     dec = '@app.route("%s", methods=["%s"])' % (path, method)
+    LOG.debug("Flask decorator %s", dec)
     for char in '/.<>?=':
         path = path.replace(char, '_')
+        LOG.debug("Replaced %s in path to get: %s", char, path)
+
     func_name = method.lower() + path
+    LOG.debug("Function name: %s", func_name)
     param_string = ""
     for i in parameters:
         param_string += i + ", "
+        LOG.debug("Building param string: %s", param_string)
     sig = 'def %s(%s):' % (func_name, param_string[:-2])
+    LOG.debug("Function signature: %s", sig)
+
     return '\n'.join([dec, sig])
 
 
@@ -127,9 +155,14 @@ def main():
     parser.add_argument("command", type=str)
     parser.add_argument("-p", dest="port", required=True, type=int)
     parser.add_argument("-i", dest="iface", default="any", type=str)
+    parser.add_argument("-d", dest="debug", action="store_true")
     parser.add_argument("-t", dest="token", type=str)
 
     args = parser.parse_args()
+
+    if args.debug:
+        LOG.setLevel(logging.DEBUG)
+        LOG.addHandler(logging.StreamHandler())
 
     if args.token:
         global TOKENS
@@ -163,15 +196,41 @@ def main():
         "app = Flask(__name__)"
     ]
 
+    verbs = ['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE',
+            'CONNECT']
+
     sigs = set()
     for client, server in client_server:
-        func = create_mock(client.read(), server.read())
-        sig = "".join(func.split("\n")[:2])
-        if sig not in sigs:
-            sigs.add(sig)
-            mock_functions.append(func)
+        client_text = client.read()
+        server_text = server.read()
         client.close()
         server.close()
+
+        LOG.debug("Text from client %s", client_text)
+        LOG.debug("Text from server %s", server_text)
+
+        verbs = " /|".join(['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE',
+                'TRACE', 'CONNECT'])
+
+        req_regex = '^(%s).*?(?=^(%s)|\Z)' % (verbs, verbs)
+        LOG.debug("Request regex %s", req_regex)
+
+        requests = [match.group(0) for match in re.finditer(req_regex,
+                client_text, flags=re.MULTILINE|re.DOTALL)]
+
+        responses = ["HTTP/" + res for res in
+                re.split("^HTTP/|\nHTTP/", server_text) if res]
+
+        LOG.debug("The split requests %s", requests)
+        LOG.debug("The split responsess %s", responses)
+
+        for req, resp in zip(requests, responses):
+            func = create_mock(req, resp)
+            LOG.debug("The function: %s", func)
+            sig = "".join(func.split("\n")[:2])
+            if sig not in sigs:
+                sigs.add(sig)
+                mock_functions.append(func)
 
     mock_functions.append("\n".join(['if __name__ == "__main__":',
         '    app.run(host="127.1", debug=True, port=%s)' % port]))
