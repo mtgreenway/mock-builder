@@ -73,8 +73,12 @@ def get_headers(server):
     ''' Extract the response headers from the server text '''
     items = []
     for line in server.split("\r\n\r\n")[0].split("\r\n")[1:]:
-        parts = line.split(": ")
-        items.append("'%s': '%s'" % (parts[0], ": ".join(parts[1:])))
+        line = line.replace("\r", '')
+        LOG.debug("Building headers line %s", line)
+        if line:
+            parts = line.split(": ")
+            LOG.debug("Building headers split line %s", parts)
+            items.append("'%s': '%s'" % (parts[0], ": ".join(parts[1:])))
     return "{%s}" % ", ".join(items)
 
 
